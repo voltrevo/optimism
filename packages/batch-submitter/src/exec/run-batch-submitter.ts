@@ -149,14 +149,21 @@ export const run = async () => {
     new JsonRpcProvider(requiredEnvVars.L2_NODE_WEB3_URL)
   )
 
+
+  const l1SequencerAddress = "0xfd7D4de366850C08EE2CBa32d851385A3071Ec8D"
   let sequencerSigner: Signer
-  if (SEQUENCER_PRIVATE_KEY) {
-    sequencerSigner = new Wallet(SEQUENCER_PRIVATE_KEY, l1Provider)
-  } else if (MNEMONIC) {
-    sequencerSigner = Wallet.fromMnemonic(MNEMONIC, HD_PATH).connect(l1Provider)
-  } else {
-    throw new Error('Must pass one of SEQUENCER_PRIVATE_KEY or MNEMONIC')
-  }
+  await l1Provider.send(
+    "hardhat_impersonateAccount", 
+    [l1SequencerAddress]
+  )
+  sequencerSigner = l1Provider.getSigner(l1SequencerAddress)
+  // if (SEQUENCER_PRIVATE_KEY) {
+  //   sequencerSigner = new Wallet(SEQUENCER_PRIVATE_KEY, l1Provider)
+  // } else if (MNEMONIC) {
+  //   sequencerSigner = Wallet.fromMnemonic(MNEMONIC, HD_PATH).connect(l1Provider)
+  // } else {
+  //   throw new Error('Must pass one of SEQUENCER_PRIVATE_KEY or MNEMONIC')
+  // }
 
   const address = await sequencerSigner.getAddress()
   logger.info('Configured batch submitter addresses', {

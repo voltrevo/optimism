@@ -1,6 +1,8 @@
 import '@nomiclabs/hardhat-waffle'
 import { HardhatUserConfig } from 'hardhat/config'
 
+import "@nomiclabs/hardhat-ethers"
+
 import {
   DEFAULT_ACCOUNTS_HARDHAT,
   RUN_OVM_TEST_GAS,
