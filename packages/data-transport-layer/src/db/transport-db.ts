@@ -27,6 +27,9 @@ const TRANSPORT_DB_KEYS = {
   STARTING_L1_BLOCK: `l1:starting`,
   HIGHEST_L2_BLOCK: `l2:highest`,
   HIGHEST_SYNCED_BLOCK: `synced:highest`,
+  FETCHER_TIPS: `fetcher:tips`,
+  LAST_TIMESTAMP: `fetcher:lastTimestamp`,
+  LAST_SEQUENCER_SUBMISSION_TIME: `fetcher:lastSequencerSubmissionTime`,
 }
 
 interface Indexed {
@@ -254,6 +257,29 @@ export class TransportDB {
         key: TRANSPORT_DB_KEYS.STARTING_L1_BLOCK,
         index: 0,
         value: block,
+      },
+    ])
+  }
+
+  public async getEnqueueTip(): Promise<number> {
+    return this.db.get<number>(TRANSPORT_DB_KEYS.FETCHER_TIPS, 0)
+  }
+
+  public async getSequencerTip(): Promise<number> {
+    return this.db.get<number>(TRANSPORT_DB_KEYS.FETCHER_TIPS, 1)
+  }
+
+  public async setFetcherTips(enqueueIndex: number, sequencerIndex: number): Promise<void> {
+    return this.db.put<number>([
+      {
+        key: TRANSPORT_DB_KEYS.FETCHER_TIPS,
+        index: 0,
+        value: enqueueIndex,
+      },
+      {
+        key: TRANSPORT_DB_KEYS.FETCHER_TIPS,
+        index: 1,
+        value: sequencerIndex,
       },
     ])
   }

@@ -10,6 +10,10 @@ import { LevelUp } from 'levelup'
 /* Imports: Internal */
 import { TransportDB } from '../../db/transport-db'
 import {
+  EnqueueEntry,
+  SequencerEntry,
+} from '../../types/database-types'
+import {
   OptimismContracts,
   sleep,
   loadOptimismContracts,
@@ -196,6 +200,8 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
 
         await this.state.db.setHighestSyncedL1Block(targetL1Block)
 
+        await this._updateCtc()
+
         if (
           currentL1Block - highestSyncedL1Block <
           this.options.logsPerPollingInterval
@@ -308,6 +314,85 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
         })
       }
     }
+  }
+
+  /**
+   * Reads the enqueue feed & sequencer feed to generate and store the CTC
+   * @return Contract address.
+   */
+  private async _updateCtc(): Promise<void> {
+    console.log('Updating ctc...')
+
+    let nextEnqueueIndex = (await this.state.db.getEnqueueTip()) | 0
+    let nextSequencerIndex = (await this.state.db.getSequencerTip()) | 0
+    const entries: SequencerEntry[] = []
+
+    while (true) {
+      const ctcTip = nextEnqueueIndex + nextSequencerIndex
+      console.log('Heres my tip', ctcTip)
+      const nextBlock = await this._selectNextBlock(nextEnqueueIndex, nextSequencerIndex)
+      console.log('We are iterating over the enqueues and sequencer txs!', nextBlock)
+
+      if (nextBlock === null) {
+        console.log('No more blocks :(')
+        break
+      } else if (nextBlock.origin !== null) {
+        console.log('Got a enqueue block')
+        entries.push({
+          index: ctcTip,
+          batchIndex: Date.now(),
+          data: nextBlock.data,
+          blockNumber: 10,
+          timestamp: 10,
+          gasLimit: 10,
+          target: '0x1234',
+          origin: nextBlock.origin,
+          decoded: undefined,
+          confirmed: true,
+        })
+        nextEnqueueIndex ++
+      } else {
+        console.log('Got a sequencer block')
+        entries.push(nextBlock as SequencerEntry)
+        nextSequencerIndex ++
+      }
+    }
+    console.log('putting everything in the DB!')
+    await this.state.db.putSequencerEntries(entries)
+    console.log('and we back!')
+
+    return
+  }
+
+  /**
+   * Reads the enqueue feed & sequencer feed to generate and store the CTC
+   * @return Contract address.
+   */
+  private async _selectNextBlock(nextEnqueueIndex: number, nextSequencerIndex: number): Promise<EnqueueEntry | SequencerEntry> {
+    const nextEnqueue = await this.state.db.getEnqueueByIndex(nextEnqueueIndex)
+    const nextSequencer = await this.state.db.getSequencerByIndex(nextSequencerIndex)
+
+    console.log('next enqueue', nextEnqueue)
+    console.log('next enqueue index', nextEnqueueIndex)
+
+    if (nextEnqueue === null && nextSequencer === null) {
+      return null
+    }
+    if (nextEnqueue === null) {
+      // return nextSequencer
+      return null
+    }
+    if (nextSequencer === null) {
+      return nextEnqueue
+    }
+    if (nextEnqueue.timestamp < nextSequencer.timestamp) {
+      return nextEnqueue
+    }
+    // return nextSequencer
+    if (nextEnqueue !== null) {
+      return nextEnqueue
+    }
+    return null
   }
 
   /**
