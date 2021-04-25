@@ -38,7 +38,7 @@ const appendSequencerBatch = async (
   })
 }
 
-describe('[GAS BENCHMARK] OVM_CanonicalTransactionChain', () => {
+describe.skip('[GAS BENCHMARK] OVM_CanonicalTransactionChain', () => {
   let sequencer: Signer
   before(async () => {
     ;[sequencer] = await ethers.getSigners()

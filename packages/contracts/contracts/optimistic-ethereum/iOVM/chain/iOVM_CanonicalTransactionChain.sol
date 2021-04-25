@@ -26,17 +26,7 @@ interface iOVM_CanonicalTransactionChain {
         uint256 _timestamp
     );
 
-    event QueueBatchAppended(
-        uint256 _startingQueueIndex,
-        uint256 _numQueueElements,
-        uint256 _totalElements
-    );
-
-    event SequencerBatchAppended(
-        uint256 _startingQueueIndex,
-        uint256 _numQueueElements,
-        uint256 _totalElements
-    );
+    event SequencerBatchAppended();
 
     event TransactionBatchAppended(
         uint256 indexed _batchIndex,
@@ -109,17 +99,6 @@ interface iOVM_CanonicalTransactionChain {
         );
 
     /**
-     * Returns the index of the next element to be enqueued.
-     * @return Index for the next queue element.
-     */
-    function getNextQueueIndex()
-        external
-        view
-        returns (
-            uint40
-        );
-
-    /**
      * Gets the queue element at a particular index.
      * @param _index Index of the queue element to access.
      * @return _element Queue element at the given index.
@@ -156,17 +135,6 @@ interface iOVM_CanonicalTransactionChain {
         );
 
     /**
-     * Get the number of queue elements which have not yet been included.
-     * @return Number of pending queue elements.
-     */
-    function getNumPendingQueueElements()
-        external
-        view
-        returns (
-            uint40
-        );
-
-    /**
      * Retrieves the length of the queue, including
      * both pending and canonical transactions.
      * @return Length of the queue.
@@ -193,27 +161,13 @@ interface iOVM_CanonicalTransactionChain {
         external;
 
     /**
-     * Appends a given number of queued transactions as a single batch.
-     * @param _numQueuedTransactions Number of transactions to append.
-     */
-    function appendQueueBatch(
-        uint256 _numQueuedTransactions
-    )
-        external;
-
-    /**
-     * Allows the sequencer to append a batch of transactions.
-     * @dev This function uses a custom encoding scheme for efficiency reasons.
-     * .param _shouldStartAtElement Specific batch we expect to start appending to.
-     * .param _totalElementsToAppend Total number of batch elements we expect to append.
-     * .param _contexts Array of batch contexts.
-     * .param _transactionDataFields Array of raw transaction data.
+     * Allows the sequencer to append a batch.
+     * @param _shouldStartAtElement Specific batch we expect to start appending to.
+     * @param _blocks All blocks to append.
      */
     function appendSequencerBatch(
-        // uint40 _shouldStartAtElement,
-        // uint24 _totalElementsToAppend,
-        // BatchContext[] _contexts,
-        // bytes[] _transactionDataFields
+        uint40 _shouldStartAtElement,
+        bytes[] memory _blocks
     )
         external;
 
