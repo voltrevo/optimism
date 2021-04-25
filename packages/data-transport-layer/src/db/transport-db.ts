@@ -9,11 +9,13 @@ import {
   StateRootEntry,
   TransactionBatchEntry,
   TransactionEntry,
+  SequencerEntry,
 } from '../types/database-types'
 import { SimpleDB } from './simple-db'
 
 const TRANSPORT_DB_KEYS = {
   ENQUEUE: `enqueue`,
+  SEQUENCER: `sequencer`,
   ENQUEUE_CTC_INDEX: `ctc:enqueue`,
   TRANSACTION: `transaction`,
   UNCONFIRMED_TRANSACTION: `unconfirmed:transaction`,
@@ -40,6 +42,10 @@ export class TransportDB {
 
   public async putEnqueueEntries(entries: EnqueueEntry[]): Promise<void> {
     await this._putEntries(TRANSPORT_DB_KEYS.ENQUEUE, entries)
+  }
+
+  public async putSequencerEntries(entries: SequencerEntry[]): Promise<void> {
+    await this._putEntries(TRANSPORT_DB_KEYS.SEQUENCER, entries)
   }
 
   public async putTransactionEntries(
@@ -97,6 +103,10 @@ export class TransportDB {
     return this._getEntryByIndex(TRANSPORT_DB_KEYS.ENQUEUE, index)
   }
 
+  public async getSequencerByIndex(index: number): Promise<SequencerEntry> {
+    return this._getEntryByIndex(TRANSPORT_DB_KEYS.SEQUENCER, index)
+  }
+
   public async getTransactionByIndex(index: number): Promise<TransactionEntry> {
     return this._getEntryByIndex(TRANSPORT_DB_KEYS.TRANSACTION, index)
   }
@@ -151,6 +161,10 @@ export class TransportDB {
 
   public async getLatestEnqueue(): Promise<EnqueueEntry> {
     return this._getLatestEntry(TRANSPORT_DB_KEYS.ENQUEUE)
+  }
+
+  public async getLatestSequencer(): Promise<SequencerEntry> {
+    return this._getLatestEntry(TRANSPORT_DB_KEYS.SEQUENCER)
   }
 
   public async getLatestTransaction(): Promise<TransactionEntry> {

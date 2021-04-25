@@ -22,6 +22,19 @@ export interface EnqueueEntry {
   timestamp: number
 }
 
+export interface SequencerEntry {
+  index: number
+  batchIndex: number
+  data: string
+  blockNumber: number
+  timestamp: number
+  gasLimit: number
+  target: string
+  origin: string
+  decoded: DecodedSequencerBatchTransaction | null
+  confirmed: boolean
+}
+
 export interface TransactionEntry {
   index: number
   batchIndex: number

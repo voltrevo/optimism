@@ -14,6 +14,7 @@ import {
   ContextResponse,
   GasPriceResponse,
   EnqueueResponse,
+  SequencerResponse,
   StateRootBatchResponse,
   StateRootResponse,
   SyncingResponse,
@@ -337,6 +338,66 @@ export class L1TransportServer extends BaseService<L1TransportServerOptions> {
         return {
           ...enqueue,
           ctcIndex,
+        }
+      }
+    )
+
+    this._registerRoute(
+      'get',
+      '/sequencer/latest',
+      async (): Promise<SequencerResponse> => {
+        const sequencer = await this.state.db.getLatestSequencer()
+
+        if (sequencer === null) {
+          return {
+            index: 99,
+            batchIndex: 1337,
+            data: '0x1234',
+            blockNumber: 10,
+            timestamp: 10,
+            gasLimit: 10,
+            target: '0x1234',
+            origin: '0x1234',
+            decoded: undefined,
+            confirmed: true,
+          }
+        }
+
+        const ctcIndex = await this.state.db.getTransactionIndexByQueueIndex(
+          sequencer.index
+        )
+
+        return {
+          ...sequencer,
+        }
+      }
+    )
+
+    this._registerRoute(
+      'get',
+      '/sequencer/index/:index',
+      async (req): Promise<SequencerResponse> => {
+        const sequencer = await this.state.db.getSequencerByIndex(
+          BigNumber.from(req.params.index).toNumber()
+        )
+
+        if (sequencer === null) {
+          return {
+            index: 99,
+            batchIndex: 1337,
+            data: '0x1234',
+            blockNumber: 10,
+            timestamp: 10,
+            gasLimit: 10,
+            target: '0x1234',
+            origin: '0x1234',
+            decoded: undefined,
+            confirmed: true,
+          }
+        }
+
+        return {
+          ...sequencer,
         }
       }
     )

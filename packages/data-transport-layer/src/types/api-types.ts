@@ -1,5 +1,6 @@
 import {
   EnqueueEntry,
+  SequencerEntry,
   StateRootBatchEntry,
   StateRootEntry,
   TransactionBatchEntry,
@@ -9,6 +10,8 @@ import {
 export type EnqueueResponse = EnqueueEntry & {
   ctcIndex: number | null
 }
+
+export type SequencerResponse = SequencerEntry
 
 export interface TransactionResponse {
   batch: TransactionBatchEntry
