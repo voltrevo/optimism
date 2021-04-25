@@ -411,7 +411,9 @@ export class L1TransportServer extends BaseService<L1TransportServerOptions> {
 
         switch (backend) {
           case 'l1':
-            transaction = await this.state.db.getLatestFullTransaction()
+            // TODO: Use the FullTransaction codepath, not unconfirmed
+            // transaction = await this.state.db.getLatestFullTransaction()
+            transaction = await this.state.db.getLatestUnconfirmedTransaction()
             break
           case 'l2':
             transaction = await this.state.db.getLatestUnconfirmedTransaction()
@@ -447,7 +449,11 @@ export class L1TransportServer extends BaseService<L1TransportServerOptions> {
 
         switch (backend ) {
           case 'l1':
-            transaction = await this.state.db.getFullTransactionByIndex(
+            // TODO: Use the FullTransaction codepath, not unconfirmed
+            // transaction = await this.state.db.getFullTransactionByIndex(
+            //   BigNumber.from(req.params.index).toNumber()
+            // )
+            transaction = await this.state.db.getUnconfirmedTransactionByIndex(
               BigNumber.from(req.params.index).toNumber()
             )
             break

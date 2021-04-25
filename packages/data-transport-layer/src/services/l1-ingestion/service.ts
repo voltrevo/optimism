@@ -12,6 +12,7 @@ import { TransportDB } from '../../db/transport-db'
 import {
   EnqueueEntry,
   SequencerEntry,
+  TransactionEntry,
 } from '../../types/database-types'
 import {
   OptimismContracts,
@@ -182,13 +183,13 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
           handleEventsTransactionEnqueued
         )
 
-        await this._syncEvents(
-          'OVM_CanonicalTransactionChain',
-          'SequencerBatchAppended',
-          highestSyncedL1Block,
-          targetL1Block,
-          handleEventsSequencerBatchAppended
-        )
+        // await this._syncEvents(
+        //   'OVM_CanonicalTransactionChain',
+        //   'SequencerBatchAppended',
+        //   highestSyncedL1Block,
+        //   targetL1Block,
+        //   handleEventsSequencerBatchAppended
+        // )
 
         await this._syncEvents(
           'OVM_StateCommitmentChain',
@@ -325,7 +326,7 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
 
     let nextEnqueueIndex = (await this.state.db.getEnqueueTip()) | 0
     let nextSequencerIndex = (await this.state.db.getSequencerTip()) | 0
-    const entries: SequencerEntry[] = []
+    const entries: TransactionEntry[] = []
 
     while (true) {
       const ctcTip = nextEnqueueIndex + nextSequencerIndex
@@ -338,30 +339,47 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
         break
       } else if (nextBlock.origin !== null) {
         console.log('Got a enqueue block')
+        const b: EnqueueEntry = nextBlock as EnqueueEntry
         entries.push({
           index: ctcTip,
-          batchIndex: Date.now(),
-          data: nextBlock.data,
-          blockNumber: 10,
-          timestamp: 10,
-          gasLimit: 10,
-          target: '0x1234',
-          origin: nextBlock.origin,
-          decoded: undefined,
-          confirmed: true,
+          batchIndex: null,
+          data: b.data,
+          blockNumber: b.blockNumber,
+          timestamp: b.timestamp,
+          gasLimit: b.gasLimit,
+          target: b.target,
+          origin: b.origin,
+          queueOrigin: 'l1',
+          queueIndex: b.index,
+          type: null,
+          decoded: null,
+          confirmed: false,
         })
         nextEnqueueIndex ++
       } else {
         console.log('Got a sequencer block')
-        entries.push(nextBlock as SequencerEntry)
+        const b: SequencerEntry = nextBlock as SequencerEntry
+        entries.push({
+          index: ctcTip,
+          batchIndex: null,
+          data: b.data,
+          blockNumber: b.blockNumber,
+          timestamp: b.timestamp,
+          gasLimit: b.gasLimit,
+          target: b.target,
+          origin: b.origin,
+          queueOrigin: 'sequencer',
+          queueIndex: b.index,
+          type: 'EIP155',
+          decoded: null,
+          confirmed: false,
+        })
         nextSequencerIndex ++
       }
     }
-    console.log('putting everything in the DB!')
-    await this.state.db.putSequencerEntries(entries)
-    console.log('and we back!')
 
-    return
+    await this.state.db.putUnconfirmedTransactionEntries(entries)
+    await this.state.db.setFetcherTips(nextEnqueueIndex, nextSequencerIndex)
   }
 
   /**
@@ -379,8 +397,7 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
       return null
     }
     if (nextEnqueue === null) {
-      // return nextSequencer
-      return null
+      return nextSequencer
     }
     if (nextSequencer === null) {
       return nextEnqueue
@@ -388,11 +405,7 @@ export class L1IngestionService extends BaseService<L1IngestionServiceOptions> {
     if (nextEnqueue.timestamp < nextSequencer.timestamp) {
       return nextEnqueue
     }
-    // return nextSequencer
-    if (nextEnqueue !== null) {
-      return nextEnqueue
-    }
-    return null
+    return nextSequencer
   }
 
   /**
