@@ -86,6 +86,7 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       getLogsInterval: this.options.getLogsInterval,
       spreadSheetMode: this.options.spreadsheetMode,
     })
+
     // Need to improve this, sorry.
     this.state = {} as any
 
@@ -158,11 +159,16 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       await sleep(this.options.pollingInterval)
 
       try {
-        // Check that the correct address is set in the address manager
+        // L2MessageRelayer is the name given to the account that's allowed to relay messages
+        // from L2 to L1. We'll need to verify that the user's wallet is actually allowed to
+        // relay messages or we'll just get an error. We perform this check on every iteration of
+        // the loop
         const relayer = await this.state.Lib_AddressManager.getAddress(
           'OVM_L2MessageRelayer'
         )
-        // If it is address(0), then message relaying is not authenticated
+
+        // If the L2MessageRelayer is set to address(0), then *any* account can relay messages and
+        // we can simply skip this step.
         if (relayer !== ethers.constants.AddressZero) {
           const address = await this.options.l1Wallet.getAddress()
           if (relayer !== address) {
@@ -172,6 +178,8 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
           }
         }
 
+        // Now we check to see if the last transaction that was previously unfinalized is now
+        // finalized. If not, we simply stop and wait for the next loop iteration.
         this.logger.info('Checking for newly finalized transactions...')
         if (
           !(await this._isTransactionFinalized(
@@ -185,18 +193,37 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
           continue
         }
 
+        // The previously unfinalized transaction is now finalized, so we mark it as such.
         this.state.lastFinalizedTxHeight = this.state.nextUnfinalizedTxHeight
+
+        // Next, we proceed to iterate through batches to find the next unfinalized transaction.
         while (
           await this._isTransactionFinalized(this.state.nextUnfinalizedTxHeight)
         ) {
+          // If transaction N is finalized, then all transactions in the same batch must also be
+          // finalized. So we'll reflect this fact by bumping the next unfinalized transaction
+          // height by the number of elements inside of transaction N's batch.
           const size = (
             await this._getStateBatchHeader(this.state.nextUnfinalizedTxHeight)
           ).batch.batchSize.toNumber()
+          this.state.nextUnfinalizedTxHeight += size
+
           this.logger.info(
             'Found a batch of finalized transaction(s), checking for more...',
             { batchSize: size }
           )
-          this.state.nextUnfinalizedTxHeight += size
+
+          // To avoid running out of memory, we'll stop searching for newly finalized transactions
+          // as soon as we find more than 1000 new transactions. This makes the service a bit slow
+          // to get started if you're syncing from 0, but doesn't have any real impact once synced
+          // to the tip.
+          if (
+            this.state.nextUnfinalizedTxHeight -
+              this.state.lastFinalizedTxHeight >
+            1000
+          ) {
+            break
+          }
         }
 
         this.logger.info('Found finalized transactions', {
@@ -205,6 +232,9 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
             this.state.lastFinalizedTxHeight,
         })
 
+        // This line is the primary reason why we want to limit the number of newly finalized
+        // transactions to something like 1000. Otherwise we'll end up trying to find and relay
+        // every single message in the chain if syncing this service from 0.
         const messages = await this._getSentMessages(
           this.state.lastFinalizedTxHeight,
           this.state.nextUnfinalizedTxHeight
@@ -220,6 +250,8 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
           this.logger.info('Found a message sent during transaction', {
             index: message.parentTransactionIndex,
           })
+
+          // We don't need to relay messages if they've already been relayed.
           if (await this._wasMessageRelayed(message)) {
             this.logger.info('Message has already been relayed, skipping.')
             continue
@@ -228,11 +260,16 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
           this.logger.info(
             'Message not yet relayed. Attempting to generate a proof...'
           )
+
+          // We need to generate a proof that the message was actually included as part of the L2
+          // chain. Can't execute the relay step without this proof.
           const proof = await this._getMessageProof(message)
+
           this.logger.info(
             'Successfully generated a proof. Attempting to relay to Layer 1...'
           )
 
+          // And finally: send the message off to L1!
           await this._relayMessageToL1(message, proof)
         }
 
@@ -319,10 +356,18 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
     return
   }
 
+  /**
+   * Checks whether the transaction at a given height is finalized.
+   * @param height Height of the transaction to check.
+   * @returns Whether or not the transaction is finalized.
+   */
   private async _isTransactionFinalized(height: number): Promise<boolean> {
     this.logger.info('Checking if tx is finalized', { height })
+
+    // Need to find the batch that corresponds to this transaction.
     const header = await this._getStateBatchHeader(height)
 
+    // If undefined then the batch doesn't exist yet, transaction can't be finalized.
     if (header === undefined) {
       this.logger.info('No state batch header found.')
       return false
@@ -330,23 +375,45 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       this.logger.info('Got state batch header', { header })
     }
 
-    return !(await this.state.OVM_StateCommitmentChain.insideFraudProofWindow(
+    // Check whether the batch is still inside the fraud proof window.
+    const insideFraudProofWindow = await this.state.OVM_StateCommitmentChain.insideFraudProofWindow(
       header.batch
-    ))
+    )
+
+    // If the batch is *not* still inside the fraud proof window then it's considered finalized.
+    return insideFraudProofWindow === false
   }
 
+  /**
+   * Gets all L1 => L2 messages triggered between some start transaction height (inclusive) and an
+   * end transaction height (exclusive).
+   * @param startHeight Height to start querying from (inclusive).
+   * @param endHeight Height to stop querying at (exclusive).
+   * @returns All messages sent between the given transaction heights.
+   */
   private async _getSentMessages(
     startHeight: number,
     endHeight: number
   ): Promise<SentMessage[]> {
-    const filter = this.state.OVM_L2CrossDomainMessenger.filters.SentMessage()
+    // We subtract one from endHeight when filtering for events because `queryFilter` is inclusive
+    // on both sides. We perform this addition here to avoid having endHeight < startHeight.
+    if (startHeight === endHeight) {
+      endHeight = startHeight + 1
+    }
+
+    // Find all SentMessage events between the two block heights. `queryFilter` is inclusive on
+    // both ends, so we'll want to subtract one from endHeight.
     const events = await this.state.OVM_L2CrossDomainMessenger.queryFilter(
-      filter,
+      this.state.OVM_L2CrossDomainMessenger.filters.SentMessage(),
       startHeight + this.options.l2BlockOffset,
       endHeight + this.options.l2BlockOffset - 1
     )
 
+    // Now we just need to parse the raw ethers.Event objects into usable structs.
     return events.map((event) => {
+      // The emitted message is an encoded call to `OVM_L1CrossDomainMessenger.relayMessage`. Since
+      // the `OVM_L1CrossDomainMessenger` and `OVM_L2CrossDomainMessenger` use the same interface
+      // for `relayMessage`, we can also decode it using the `OVM_L2CrossDomainMessage` interface.
       const message = event.args.message
       const decoded = this.state.OVM_L2CrossDomainMessenger.interface.decodeFunctionData(
         'relayMessage',
@@ -366,12 +433,22 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
     })
   }
 
+  /**
+   * Checks whether a given message has already been relayed successfully.
+   * @param message Message to check.
+   * @returns Whether or not the message has been relayed.
+   */
   private async _wasMessageRelayed(message: SentMessage): Promise<boolean> {
     return this.state.OVM_L1CrossDomainMessenger.successfulMessages(
       message.encodedMessageHash
     )
   }
 
+  /**
+   * Generates the proof of validity for a given message.
+   * @param message Message to generate a proof for.
+   * @returns Proof of validity for the message.
+   */
   private async _getMessageProof(
     message: SentMessage
   ): Promise<SentMessageProof> {
@@ -413,15 +490,18 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       }
     }
 
-    const hash = (el: Buffer | string): Buffer => {
-      return Buffer.from(ethers.utils.keccak256(el).slice(2), 'hex')
-    }
-
     const leaves = elements.map((element) => {
       return fromHexString(element)
     })
 
-    const tree = new MerkleTree(leaves, hash)
+    const tree = new MerkleTree(
+      leaves,
+      (el: Buffer | string): Buffer => {
+        // merkletreejs prefers things to be Buffers
+        return fromHexString(ethers.utils.keccak256(el))
+      }
+    )
+
     const index =
       message.parentTransactionIndex - header.batch.prevTotalElements.toNumber()
     const treeProof = tree.getProof(leaves[index], index).map((element) => {
@@ -440,11 +520,19 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
     }
   }
 
+  /**
+   * Sends a message to be executed on L1.
+   * @param message Message to execute on L1.
+   * @param proof Proof of validity for the given message.
+   */
   private async _relayMessageToL1(
     message: SentMessage,
     proof: SentMessageProof
   ): Promise<void> {
     if (this.options.spreadsheetMode) {
+      // Spreadsheet mode is a special operation mode that allows us to easily review messages
+      // in an accessible spreadsheet. We could do the same thing with a database and a frontend
+      // but that's significantly more effort for the same effect.
       try {
         await this.options.spreadsheet.addRow({
           target: message.target,
@@ -477,6 +565,9 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
           'Dry-run, checking to make sure proof would succeed...'
         )
 
+        // We want to perform a dry run of the message relaying process just to make sure that
+        // there won't be any issues when we actually try to send the message. This will throw an
+        // error if the relay process reverts.
         await this.state.OVM_L1CrossDomainMessenger.connect(
           this.options.l1Wallet
         ).callStatic.relayMessage(
@@ -502,6 +593,9 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
         return
       }
 
+      // If we got this far then the dry run must've succeeded. We'll try to relay the message for
+      // real now. This could still fail in some circumstances (e.g., someone else relays the
+      // message in between the time when we did the dry run and when we get to this step).
       const result = await this.state.OVM_L1CrossDomainMessenger.connect(
         this.options.l1Wallet
       ).relayMessage(
@@ -520,6 +614,8 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       })
 
       try {
+        // Wait for the transaction to be included in a block. This will throw an error if the
+        // transaction reverted and we'll catch it below.
         const receipt = await result.wait()
 
         this.logger.info('Relay message included in block', {
@@ -537,6 +633,7 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
         })
         return
       }
+
       this.logger.info('Message successfully relayed to Layer 1!')
     }
   }
