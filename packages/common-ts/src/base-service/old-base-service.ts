@@ -1,6 +1,6 @@
 /* Imports: Internal */
-import { Logger } from './common/logger'
-import { Metrics } from './common/metrics'
+import { Logger } from '../common/logger'
+import { Metrics } from '../common/metrics'
 
 type OptionSettings<TOptions> = {
   [P in keyof TOptions]?: {
@@ -13,7 +13,7 @@ type OptionSettings<TOptions> = {
  * Base for other "Service" objects. Handles your standard initialization process, can dynamically
  * start and stop.
  */
-export class BaseService<T> {
+export abstract class BaseService<T> {
   protected name: string
   protected options: T
   protected logger: Logger
@@ -54,8 +54,20 @@ export class BaseService<T> {
 
     // set the service to running
     this.running = true
-    await this._start()
-    this.logger.info('Service has started')
+
+    // await this._onStart()
+
+    while (this.running) {
+      try {
+        await this._main()
+      } catch (err) {
+        this.logger.error('caught an unhandled exception', {
+          message: err.message,
+          stack: err.stack,
+          code: err.code,
+        })
+      }
+    }
   }
 
   /**
@@ -66,32 +78,12 @@ export class BaseService<T> {
       return
     }
 
-    this.logger.info('Service is stopping...')
-    await this._stop()
-    this.logger.info('Service has stopped')
+    // await this._onStart()
     this.running = false
+    this.logger.info('service has stopped')
   }
 
-  /**
-   * Internal init function. Parent should implement.
-   */
-  protected async _init(): Promise<void> {
-    return
-  }
-
-  /**
-   * Internal start function. Parent should implement.
-   */
-  protected async _start(): Promise<void> {
-    return
-  }
-
-  /**
-   * Internal stop function. Parent should implement.
-   */
-  protected async _stop(): Promise<void> {
-    return
-  }
+  abstract _start(): Promise<void>
 }
 
 /**
