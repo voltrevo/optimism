@@ -1,17 +1,22 @@
+/* Imports: External */
+import { Bcfg } from '@eth-optimism/core-utils'
+import Config from 'bcfg'
+import * as dotenv from 'dotenv'
+import { cloneDeep } from 'lodash'
+
 /* Imports: Internal */
 import { Logger } from '../common/logger'
-import { Metrics } from '../common/metrics'
-import { ValidationFunction, validate } from './validators'
+import { ValidationFunction, EnvVarParsingFunction } from './validators'
 
 type OptionSettings<TOptions> = {
   [P in keyof TOptions]?: {
-    required?: boolean
     default?: TOptions[P]
+    parse?: EnvVarParsingFunction
     validate?: ValidationFunction
   }
 }
 
-abstract class Service<TServiceOptions> {
+export abstract class Service<TServiceOptions> {
   protected logger: Logger
   protected options: TServiceOptions
 
@@ -20,9 +25,37 @@ abstract class Service<TServiceOptions> {
     options: TServiceOptions
     optionSettings?: OptionSettings<TServiceOptions>
   }) {
-    this.options = mergeEnvironmentOptions(params.options, params.optionSettings)
-    validateOptions(this.options, params.optionSettings || {})
-    this.options = mergeDefaultOptions(this.options, params.optionSettings)
+    dotenv.config()
+    const config: Bcfg = new Config(params.name)
+    config.load({
+      env: true,
+      argv: true,
+    })
+
+    this.options = params.options
+    for (const optionName of Object.keys(params.optionSettings || {})) {
+      const optionValue = this.options[optionName]
+      const optionSettings = params.optionSettings[optionName]
+
+      if (optionValue === undefined) {
+        if (optionSettings.parse) {
+          this.options[optionName] = optionSettings.parse(config.str(optionName))
+        }
+
+        if (optionSettings.default) {
+          this.options[optionName] = cloneDeep(optionSettings.default)
+        } else {
+          throw new Error(`value for option "${optionName}" was undefined but no default was specified`)
+        }
+      }
+
+      if (optionSettings.validate) {
+        if (!optionSettings.validate(optionValue)) {
+          throw new Error(`value for option "${optionName}" is invalid: ${optionValue}`)
+        }
+      }
+    }
+
     this.logger = new Logger({ name: params.name })
   }
 
@@ -51,106 +84,3 @@ abstract class Service<TServiceOptions> {
   protected abstract init(): Promise<void>
   protected abstract main(): Promise<void>
 }
-
-/**
- * Combines user provided and default options.
- */
-function mergeDefaultOptions<T>(
-  options: T,
-  optionSettings: OptionSettings<T>
-): T {
-  for (const optionName of Object.keys(optionSettings)) {
-    const optionDefault = optionSettings[optionName].default
-    if (optionDefault === undefined) {
-      continue
-    }
-
-    if (options[optionName] !== undefined && options[optionName] !== null) {
-      continue
-    }
-
-    options[optionName] = optionDefault
-  }
-
-  return options
-}
-
-/**
- * Combines user provided and default options.
- */
-function mergeEnvironmentOptions<T>(
-  options: T,
-  optionSettings: OptionSettings<T>
-): T {
-  for (const optionName of Object.keys(optionSettings)) {
-    const optionDefault = optionSettings[optionName].default
-    if (optionDefault === undefined) {
-      continue
-    }
-
-    if (options[optionName] !== undefined && options[optionName] !== null) {
-      continue
-    }
-
-    options[optionName] = optionDefault
-  }
-
-  return options
-}
-
-/**
- * Performs option validation against the option settings
- */
-function validateOptions<T>(options: T, optionSettings: OptionSettings<T>) {
-  for (const optionName of Object.keys(optionSettings)) {
-    const optionSetting = optionSettings[optionName]
-    const optionValue = options[optionName]
-
-    if (optionSetting.required && optionValue === undefined) {
-      throw new Error(
-        `a value for option "${optionName}" is required but no value was given`
-      )
-    }
-
-    if (
-      optionSetting.validate &&
-      optionSetting.validate(optionValue) === false
-    ) {
-      throw new Error(
-        `value for option "${optionName}" is invalid: ${optionValue}`
-      )
-    }
-  }
-}
-
-interface MyServiceOptions {
-  myOption: number
-}
-
-class MyService extends Service<MyServiceOptions> {
-  constructor(options: MyServiceOptions) {
-    super({
-      name: 'my-service',
-      options,
-      optionSettings: {
-        myOption: {
-          required: true,
-          default: 12345,
-          validate: validate.integer,
-        },
-      },
-    })
-  }
-
-  async init() {}
-
-  async main() {
-    process.exit(0)
-  }
-}
-
-const service = new MyService({
-  myOption: 123,
-})
-
-service.run()
