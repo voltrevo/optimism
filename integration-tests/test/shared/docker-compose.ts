@@ -16,7 +16,7 @@ const DEFAULT_SERVICES: ServiceNames[] = [
   'dtl',
   'l2geth',
   'relayer',
-  'l1_chain'
+  'l1_chain',
 ]
 
 export class DockerComposeNetwork {
@@ -55,6 +55,10 @@ export class DockerComposeNetwork {
 
   async stop(service: ServiceNames) {
     return compose.stopOne(service, { cwd: OPS_DIRECTORY })
+  }
+
+  async restart(service: ServiceNames) {
+    return compose.restartOne(service)
   }
 
   async exec(service: ServiceNames, command: string) {
