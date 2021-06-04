@@ -1,57 +1,63 @@
 /* Imports: External */
-import { Bcfg } from '@eth-optimism/core-utils'
 import Config from 'bcfg'
 import * as dotenv from 'dotenv'
 import { cloneDeep } from 'lodash'
 
 /* Imports: Internal */
 import { Logger } from '../common/logger'
-import { ValidationFunction, EnvVarParsingFunction } from './validators'
+import { TypingFunction } from './types'
 
 type OptionSettings<TOptions> = {
   [P in keyof TOptions]?: {
     default?: TOptions[P]
-    parse?: EnvVarParsingFunction
-    validate?: ValidationFunction
+    type?: TypingFunction
   }
 }
 
-export abstract class Service<TServiceOptions> {
+export abstract class Service<TServiceOptions, TServiceState> {
   protected logger: Logger
   protected options: TServiceOptions
+  protected state: TServiceState
 
   constructor(params: {
     name: string
-    options: TServiceOptions
+    options: Partial<TServiceOptions>
     optionSettings?: OptionSettings<TServiceOptions>
+    state: TServiceState
   }) {
     dotenv.config()
-    const config: Bcfg = new Config(params.name)
+    const config = new Config(params.name)
     config.load({
       env: true,
       argv: true,
     })
 
-    this.options = params.options
+    this.options = params.options as TServiceOptions
     for (const optionName of Object.keys(params.optionSettings || {})) {
       const optionValue = this.options[optionName]
       const optionSettings = params.optionSettings[optionName]
 
       if (optionValue === undefined) {
-        if (optionSettings.parse) {
-          this.options[optionName] = optionSettings.parse(config.str(optionName))
+        if (optionSettings.validator) {
+          this.options[optionName] = optionSettings.validator.parse(
+            config.str(optionName)
+          )
         }
 
         if (optionSettings.default) {
           this.options[optionName] = cloneDeep(optionSettings.default)
         } else {
-          throw new Error(`value for option "${optionName}" was undefined but no default was specified`)
+          throw new Error(
+            `value for option "${optionName}" was undefined but no default was specified`
+          )
         }
       }
 
-      if (optionSettings.validate) {
-        if (!optionSettings.validate(optionValue)) {
-          throw new Error(`value for option "${optionName}" is invalid: ${optionValue}`)
+      if (optionSettings.validator) {
+        if (!optionSettings.validator.validate(optionValue)) {
+          throw new Error(
+            `value for option "${optionName}" is invalid: ${optionValue}`
+          )
         }
       }
     }

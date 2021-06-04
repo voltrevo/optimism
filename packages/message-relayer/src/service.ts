@@ -2,7 +2,7 @@
 import { ethers, providers } from 'ethers'
 import { getContractInterface } from '@eth-optimism/contracts'
 import { sleep, NUM_L2_GENESIS_BLOCKS } from '@eth-optimism/core-utils'
-import { BaseService } from '@eth-optimism/common-ts'
+import { Service, types } from '@eth-optimism/common-ts'
 
 /* Imports: Internal */
 import {
@@ -17,99 +17,74 @@ interface MessageRelayerOptions {
   l2RpcProvider: providers.JsonRpcProvider | string
 
   // Address of the OVM_StateCommitmentChain.
-  stateCommitmentChainAddress: string
+  stateCommitmentChain: string | ethers.Contract
 
   // Address of the L1CrossDomainMessenger.
-  l1CrossDomainMessengerAddress: string
+  l1CrossDomainMessenger: string | ethers.Contract
 
   // Address of the L2CrossDomainMessenger.
-  l2CrossDomainMessengerAddress: string
+  l2CrossDomainMessenger: string | ethers.Contract
 
   // Private key for the account that will relay transactions.
-  relayerPrivateKey: string
+  relayerWallet: string | ethers.Wallet
 
   // Interval in milliseconds to wait between loops when waiting for new transactions to scan.
-  pollingIntervalMs?: number
+  pollingIntervalMs: number
 }
 
-export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
-  constructor(options: MessageRelayerOptions) {
-    super('Message_Relayer', options, {
-      pollingIntervalMs: { default: 5000 },
+interface MessageRelayerState {
+  // Index of the next state root batch to sync.
+  nextUnsyncedStateRootBatchIndex: number
+}
+
+export class MessageRelayerService extends Service<
+  MessageRelayerOptions,
+  MessageRelayerState
+> {
+  constructor(options: Partial<MessageRelayerOptions> = {}) {
+    super({
+      name: 'message-relayer',
+      options: options,
+      optionSettings: {
+        l1RpcProvider: {
+          type: types.JsonRpcProvider,
+        },
+        l2RpcProvider: {
+          type: types.JsonRpcProvider,
+        },
+        stateCommitmentChain: {
+          type: types.Contract(
+            getContractInterface('OVM_StateCommitmentChain')
+          ),
+        },
+        l1CrossDomainMessenger: {
+          type: types.Contract(
+            getContractInterface('OVM_L1CrossDomainMessenger')
+          ),
+        },
+        l2CrossDomainMessenger: {
+          type: types.Contract(
+            getContractInterface('OVM_L2CrossDomainMessenger')
+          ),
+        },
+        relayerWallet: {
+          type: types.Wallet,
+        },
+        pollingIntervalMs: {
+          default: 5000,
+          type: types.number,
+        },
+      },
+      state: {
+        nextUnsyncedStateRootBatchIndex: 0,
+      },
     })
   }
 
-  private state: {
-    l1RpcProvider: ethers.providers.JsonRpcProvider
-    l2RpcProvider: ethers.providers.JsonRpcProvider
-    relayerWallet: ethers.Wallet
-    stateCommitmentChain: ethers.Contract
-    l1CrossDomainMessenger: ethers.Contract
-    l2CrossDomainMessenger: ethers.Contract
-    nextUnsyncedStateRootBatchIndex: number
-  } = {
-    nextUnsyncedStateRootBatchIndex: 0,
-  } as any
-
-  protected async _init(): Promise<void> {
-    this.logger.info('Initializing message relayer', {
-      pollingInterval: this.options.pollingIntervalMs,
-    })
-
-    // Set up our providers.
-    if (typeof this.options.l1RpcProvider === 'string') {
-      this.state.l1RpcProvider = new ethers.providers.JsonRpcProvider(
-        this.options.l1RpcProvider
-      )
-    } else {
-      this.state.l1RpcProvider = this.options.l1RpcProvider
-    }
-    if (typeof this.options.l2RpcProvider === 'string') {
-      this.state.l2RpcProvider = new ethers.providers.JsonRpcProvider(
-        this.options.l2RpcProvider
-      )
-    } else {
-      this.state.l2RpcProvider = this.options.l2RpcProvider
-    }
-
-    // Set up our contract references.
-    this.state.stateCommitmentChain = new ethers.Contract(
-      this.options.stateCommitmentChainAddress,
-      getContractInterface('OVM_StateCommitmentChain'),
-      this.state.l1RpcProvider
-    )
-    this.state.l1CrossDomainMessenger = new ethers.Contract(
-      this.options.l1CrossDomainMessengerAddress,
-      getContractInterface('OVM_L1CrossDomainMessenger'),
-      this.state.l1RpcProvider
-    )
-    this.state.l2CrossDomainMessenger = new ethers.Contract(
-      this.options.l2CrossDomainMessengerAddress,
-      getContractInterface('OVM_L2CrossDomainMessenger'),
-      this.state.l2RpcProvider
-    )
-
-    // And finally set up our wallet object.
-    this.state.relayerWallet = new ethers.Wallet(
-      this.options.relayerPrivateKey,
-      this.state.l1RpcProvider
-    )
-  }
-
-  protected async _start(): Promise<void> {
-    while (this.running) {
-      try {
-        await this._main()
-      } catch (err) {
-        // Log the error but don't throw.
-      }
-    }
-  }
-
-  private async _main(): Promise<void> {
+  protected async main(): Promise<void> {
     const nextUnsyncedStateRootBatch = await getStateRootBatchByBatchIndex(
-      this.state.l1RpcProvider,
-      this.options.stateCommitmentChainAddress,
+      this.options.l1RpcProvider,
+      this.options.stateCommitmentChain.address,
       this.state.nextUnsyncedStateRootBatchIndex
     )
 
@@ -118,7 +93,7 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       return
     }
 
-    const isBatchUnfinalized = await this.state.stateCommitmentChain.insideFraudProofWindow(
+    const isBatchUnfinalized = await this.options.stateCommitmentChain.insideFraudProofWindow(
       nextUnsyncedStateRootBatch.header
     )
 
@@ -129,8 +104,8 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
 
     const batchPrevTotalElements = nextUnsyncedStateRootBatch.header.prevTotalElements.toNumber()
     const batchSize = nextUnsyncedStateRootBatch.header.batchSize.toNumber()
-    const messageEvents = await this.state.l2CrossDomainMessenger.queryFilter(
-      this.state.l2CrossDomainMessenger.filters.SentMessage(),
+    const messageEvents = await this.options.l2CrossDomainMessenger.queryFilter(
+      this.options.l2CrossDomainMessenger.filters.SentMessage(),
       batchPrevTotalElements + NUM_L2_GENESIS_BLOCKS,
       batchPrevTotalElements + batchSize + NUM_L2_GENESIS_BLOCKS
     )
@@ -149,10 +124,10 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
       })
 
       const messagePairs = await getMessagesAndProofsForL2Transaction(
-        this.state.l1RpcProvider,
-        this.state.l2RpcProvider,
-        this.options.stateCommitmentChainAddress,
-        this.options.l2CrossDomainMessengerAddress,
+        this.options.l1RpcProvider,
+        this.options.l2RpcProvider,
+        this.options.stateCommitmentChain.address,
+        this.options.l2CrossDomainMessenger.address,
         messageEvent.transactionHash
       )
 
@@ -166,8 +141,8 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
         })
 
         try {
-          const result = await this.state.l1CrossDomainMessenger
-            .connect(this.state.relayerWallet)
+          const result = await this.options.l1CrossDomainMessenger
+            .connect(this.options.relayerWallet)
             .relayMessage(
               message.target,
               message.sender,
@@ -183,7 +158,7 @@ export class MessageRelayerService extends BaseService<MessageRelayerOptions> {
             relayTransactionHash: receipt.transactionHash,
           })
         } catch (err) {
-          const wasAlreadyRelayed = await this.state.l1CrossDomainMessenger.successfulMessages(
+          const wasAlreadyRelayed = await this.options.l1CrossDomainMessenger.successfulMessages(
             messageHash
           )
 
