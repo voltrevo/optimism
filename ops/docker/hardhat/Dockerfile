@@ -10,6 +10,7 @@ COPY [ \
 # install deps
 WORKDIR /hardhat
 RUN yarn install
+RUN apk add --no-cache iproute2 iputils
 
 # bring in dockerenv so that hardhat launches with host = 0.0.0.0 instead of 127.0.0.1
 # so that it's accessible from other boxes as well

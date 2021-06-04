@@ -8,6 +8,7 @@ type ServiceNames =
   | 'l2geth'
   | 'relayer'
   | 'verifier'
+  | 'l1_chain'
 
 const OPS_DIRECTORY = path.join(process.cwd(), '../ops')
 const DEFAULT_SERVICES: ServiceNames[] = [
@@ -15,6 +16,7 @@ const DEFAULT_SERVICES: ServiceNames[] = [
   'dtl',
   'l2geth',
   'relayer',
+  'l1_chain'
 ]
 
 export class DockerComposeNetwork {
