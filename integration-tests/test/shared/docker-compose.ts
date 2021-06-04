@@ -2,7 +2,7 @@ import * as compose from 'docker-compose'
 import * as shell from 'shelljs'
 import * as path from 'path'
 
-type ServiceNames =
+export type ServiceNames =
   | 'batch_submitter'
   | 'dtl'
   | 'l2geth'
@@ -55,6 +55,10 @@ export class DockerComposeNetwork {
 
   async stop(service: ServiceNames) {
     return compose.stopOne(service, { cwd: OPS_DIRECTORY })
+  }
+
+  async exec(service: ServiceNames, command: string) {
+    return compose.exec(service, command)
   }
 
   async rm() {
