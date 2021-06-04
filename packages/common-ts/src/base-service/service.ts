@@ -14,9 +14,9 @@ type OptionSettings<TOptions> = {
   }
 }
 
-export abstract class Service<TServiceOptions, TServiceState> {
+export abstract class Service<TServiceOptions, TServiceParsedOptions, TServiceState> {
   protected logger: Logger
-  protected options: TServiceOptions
+  protected options: TServiceParsedOptions
   protected state: TServiceState
 
   constructor(params: {
@@ -32,7 +32,7 @@ export abstract class Service<TServiceOptions, TServiceState> {
       argv: true,
     })
 
-    this.options = params.options as TServiceOptions
+    this.options = params.options as TServiceParsedOptions
     for (const optionName of Object.keys(params.optionSettings || {})) {
       const optionValue = this.options[optionName]
       const optionSettings = params.optionSettings[optionName]
@@ -67,10 +67,13 @@ export abstract class Service<TServiceOptions, TServiceState> {
 
   public run(): void {
     const _run = async () => {
-      this.logger.info('initializing service')
-      await this.init()
-      this.logger.info('service initialized')
+      if (this.init) {
+        this.logger.info('initializing service')
+        await this.init()
+        this.logger.info('service initialized')
+      }
 
+      this.logger.info('starting main loop')
       while (true) {
         try {
           await this.main()
@@ -87,6 +90,6 @@ export abstract class Service<TServiceOptions, TServiceState> {
     _run()
   }
 
-  protected abstract init(): Promise<void>
+  protected abstract init?(): Promise<void>
   protected abstract main(): Promise<void>
 }

@@ -11,7 +11,7 @@ import {
   getStateRootBatchByBatchIndex,
 } from './relay-tx'
 
-interface MessageRelayerOptions {
+interface Options {
   // Providers for interacting with L1 and L2.
   l1RpcProvider: providers.JsonRpcProvider | string
   l2RpcProvider: providers.JsonRpcProvider | string
@@ -32,14 +32,25 @@ interface MessageRelayerOptions {
   pollingIntervalMs: number
 }
 
-interface MessageRelayerState {
+interface ParsedOptions {
+  l1RpcProvider: providers.JsonRpcProvider
+  l2RpcProvider: providers.JsonRpcProvider
+  stateCommitmentChain: ethers.Contract
+  l1CrossDomainMessenger: ethers.Contract
+  l2CrossDomainMessenger: ethers.Contract
+  relayerWallet: ethers.Wallet
+  pollingIntervalMs: number
+}
+
+interface State {
   // Index of the next state root batch to sync.
   nextUnsyncedStateRootBatchIndex: number
 }
 
 export class MessageRelayerService extends Service<
-  MessageRelayerOptions,
-  MessageRelayerState
+  Options,
+  ParsedOptions,
+  State
 > {
   constructor(options: Partial<MessageRelayerOptions> = {}) {
     super({
@@ -79,6 +90,24 @@ export class MessageRelayerService extends Service<
         nextUnsyncedStateRootBatchIndex: 0,
       },
     })
+  }
+
+  protected async init(): Promise<void> {
+    // Connect contracts to their respective RPC providers.
+    this.options.stateCommitmentChain = this.options.stateCommitmentChain.connect(
+      this.options.l1RpcProvider
+    )
+    this.options.l1CrossDomainMessenger = this.options.l1CrossDomainMessenger.connect(
+      this.options.l1RpcProvider
+    )
+    this.options.l2CrossDomainMessenger = this.options.l2CrossDomainMessenger.connect(
+      this.options.l2RpcProvider
+    )
+
+    // Connect the relayer wallet to the L1 RPC provider.
+    this.options.relayerWallet = this.options.relayerWallet.connect(
+      this.options.l1RpcProvider
+    )
   }
 
   protected async main(): Promise<void> {
