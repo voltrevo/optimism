@@ -10,7 +10,7 @@ const factory = (name, ovm = false) => {
   return new ethers.ContractFactory(artifact.abi, artifact.bytecode)
 }
 const factory__L1_ERC20 = factory('ERC20')
-const factory__L2_ERC20 = factory('L2DepositedERC20', true)
+const factory__L2_ERC20 = factory('L2StandardERC20', true)
 const factory__L1StandardBridge = getContractFactory('OVM_L1StandardBridge')
 
 

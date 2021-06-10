@@ -1,5 +1,5 @@
 {
-  "name": "l1-l2-deposit-withdrawal",
+  "name": "standard-bridge-token",
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
