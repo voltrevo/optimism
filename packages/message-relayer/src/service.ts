@@ -2,7 +2,7 @@
 import { ethers, providers } from 'ethers'
 import { getContractInterface } from '@eth-optimism/contracts'
 import { sleep, NUM_L2_GENESIS_BLOCKS } from '@eth-optimism/core-utils'
-import { Service, types } from '@eth-optimism/common-ts'
+import { Service, Options, types } from '@eth-optimism/common-ts'
 
 /* Imports: Internal */
 import {
@@ -11,28 +11,17 @@ import {
   getStateRootBatchByBatchIndex,
 } from './relay-tx'
 
-interface Options {
-  // Providers for interacting with L1 and L2.
-  l1RpcProvider: providers.JsonRpcProvider | string
-  l2RpcProvider: providers.JsonRpcProvider | string
-
-  // Address of the OVM_StateCommitmentChain.
-  stateCommitmentChain: string | ethers.Contract
-
-  // Address of the L1CrossDomainMessenger.
-  l1CrossDomainMessenger: string | ethers.Contract
-
-  // Address of the L2CrossDomainMessenger.
-  l2CrossDomainMessenger: string | ethers.Contract
-
-  // Private key for the account that will relay transactions.
-  relayerWallet: string | ethers.Wallet
-
-  // Interval in milliseconds to wait between loops when waiting for new transactions to scan.
-  pollingIntervalMs: number
+interface ServiceOptions extends Options {
+  l1RpcProvider: string
+  l2RpcProvider: string
+  stateCommitmentChain: string
+  l1CrossDomainMessenger: string
+  l2CrossDomainMessenger: string
+  relayerWallet: string
+  pollingIntervalMs: string
 }
 
-interface ParsedOptions {
+interface ServiceParsedOptions {
   l1RpcProvider: providers.JsonRpcProvider
   l2RpcProvider: providers.JsonRpcProvider
   stateCommitmentChain: ethers.Contract
@@ -42,48 +31,56 @@ interface ParsedOptions {
   pollingIntervalMs: number
 }
 
-interface State {
+interface ServiceState {
   // Index of the next state root batch to sync.
   nextUnsyncedStateRootBatchIndex: number
 }
 
 export class MessageRelayerService extends Service<
-  Options,
-  ParsedOptions,
-  State
+  ServiceOptions,
+  ServiceParsedOptions,
+  ServiceState
 > {
-  constructor(options: Partial<MessageRelayerOptions> = {}) {
+  constructor(options: Partial<ServiceOptions> = {}) {
     super({
       name: 'message-relayer',
       options: options,
       optionSettings: {
         l1RpcProvider: {
+          description: 'URL for the L1 RPC provider',
           type: types.JsonRpcProvider,
         },
         l2RpcProvider: {
+          description: 'URL for the L2 RPC provider',
           type: types.JsonRpcProvider,
         },
         stateCommitmentChain: {
+          description: 'Address of the StateCommitmentChain',
           type: types.Contract(
             getContractInterface('OVM_StateCommitmentChain')
           ),
         },
         l1CrossDomainMessenger: {
+          description: 'Address of the L1CrossDomainMessenger',
           type: types.Contract(
             getContractInterface('OVM_L1CrossDomainMessenger')
           ),
         },
         l2CrossDomainMessenger: {
+          description: 'Address of the L2CrossDomainMessenger',
           type: types.Contract(
             getContractInterface('OVM_L2CrossDomainMessenger')
           ),
         },
         relayerWallet: {
+          description: 'Private key for the wallet to relay transactions with',
           type: types.Wallet,
         },
         pollingIntervalMs: {
-          default: 5000,
-          type: types.number,
+          description:
+            'Interval in milliseconds to wait between loops when waiting for new transactions to scan',
+          default: '5000',
+          type: types.int,
         },
       },
       state: {
@@ -208,4 +205,8 @@ export class MessageRelayerService extends Service<
 
     this.state.nextUnsyncedStateRootBatchIndex += 1
   }
+}
+
+if (require.main === module) {
+  new MessageRelayerService().run()
 }

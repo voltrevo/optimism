@@ -2,29 +2,64 @@
 import Config from 'bcfg'
 import * as dotenv from 'dotenv'
 import { cloneDeep } from 'lodash'
+import { Command } from 'commander'
 
 /* Imports: Internal */
 import { Logger } from '../common/logger'
 import { TypingFunction } from './types'
 
-type OptionSettings<TOptions> = {
-  [P in keyof TOptions]?: {
+export type Options = {
+  [key: string]: string
+}
+
+export type ParsedOptions<TOptions extends Options> = {
+  [P in keyof TOptions]: any
+}
+
+export type OptionSettings<
+  TOptions extends Options,
+  TParsedOptions extends ParsedOptions<TOptions>
+> = {
+  [P in keyof TOptions]: {
+    description: string
     default?: TOptions[P]
-    type?: TypingFunction
+    type: TypingFunction<TParsedOptions[P]>
   }
 }
 
-export abstract class Service<TServiceOptions, TServiceParsedOptions, TServiceState> {
+export abstract class Service<
+  TOptions extends Options,
+  TParsedOptions extends ParsedOptions<TOptions>,
+  TServiceState
+> {
   protected logger: Logger
-  protected options: TServiceParsedOptions
   protected state: TServiceState
+  protected readonly options: TParsedOptions
+  protected readonly optionSettings: OptionSettings<TOptions, TParsedOptions>
 
   constructor(params: {
     name: string
-    options: Partial<TServiceOptions>
-    optionSettings?: OptionSettings<TServiceOptions>
+    options: Partial<TOptions>
+    optionSettings: OptionSettings<TOptions, TParsedOptions>
     state: TServiceState
   }) {
+    this.optionSettings = params.optionSettings
+
+    // Use commander as a way to communicate info about the service. We don't actually *use*
+    // commander for anything besides the ability to run `ts-node ./service.ts --help`.
+    const program = new Command()
+    for (const [optionName, optionSettings] of Object.entries(
+      this.optionSettings
+    )) {
+      program.option(
+        `--${optionName.toLowerCase()}`,
+        `${optionSettings.description}, env: ${params.name
+          .replace('-', '_')
+          .toUpperCase()}__${optionName.toUpperCase()}`
+      )
+    }
+    program.parse(process.argv)
+
     dotenv.config()
     const config = new Config(params.name)
     config.load({
@@ -32,20 +67,17 @@ export abstract class Service<TServiceOptions, TServiceParsedOptions, TServiceSt
       argv: true,
     })
 
-    this.options = params.options as TServiceParsedOptions
-    for (const optionName of Object.keys(params.optionSettings || {})) {
-      const optionValue = this.options[optionName]
-      const optionSettings = params.optionSettings[optionName]
+    this.options = {} as any
+    for (const [optionName, optionSettings] of Object.entries(
+      this.optionSettings
+    )) {
+      const optionValue =
+        this.options[optionName] || config.str(optionName) || undefined
 
       if (optionValue === undefined) {
-        if (optionSettings.validator) {
-          this.options[optionName] = optionSettings.validator.parse(
-            config.str(optionName)
-          )
-        }
-
         if (optionSettings.default) {
-          this.options[optionName] = cloneDeep(optionSettings.default)
+          // TODO: Figure out how to deal with this typing hell.
+          ;(this.options as any)[optionName] = cloneDeep(optionSettings.default)
         } else {
           throw new Error(
             `value for option "${optionName}" was undefined but no default was specified`
@@ -53,8 +85,19 @@ export abstract class Service<TServiceOptions, TServiceParsedOptions, TServiceSt
         }
       }
 
-      if (optionSettings.validator) {
-        if (!optionSettings.validator.validate(optionValue)) {
+      if (optionSettings.type) {
+        try {
+          // TODO: Figure out how to deal with this typing hell.
+          ;(this.options as any)[optionName] = optionSettings.type.parse(
+            optionValue
+          )
+        } catch (err) {
+          throw new Error(
+            `unparseable value for option "${optionName}": ${optionValue}`
+          )
+        }
+
+        if (!optionSettings.type.validate((this.options as any)[optionName])) {
           throw new Error(
             `value for option "${optionName}" is invalid: ${optionValue}`
           )

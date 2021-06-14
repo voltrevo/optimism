@@ -24,6 +24,7 @@
     "@types/pino": "^6.3.6",
     "@types/pino-multi-stream": "^5.1.1",
     "@types/prettier": "^2.2.3",
+    "@types/toposort": "^2.0.3",
     "chai": "^4.3.4",
     "mocha": "^8.4.0",
     "prettier": "^2.2.1",
@@ -37,6 +38,7 @@
   },
   "dependencies": {
     "@sentry/node": "^6.2.5",
+    "commander": "^7.2.0",
     "express": "^4.17.1",
     "lodash": "^4.17.21",
     "pino": "^6.11.3",

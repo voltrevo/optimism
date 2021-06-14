@@ -1,21 +1,38 @@
 /* Imports: External */
 import { ethers } from 'ethers'
 
-export type TypingFunction = {
-  parse: (val: string) => any
-  validate: (val: any) => boolean
+export type TypingFunction<TParsedType> = {
+  parse: (val: string) => TParsedType
+  validate: (val: TParsedType) => boolean
 }
-export type TypingFunctionGenerator = (...args: any[]) => TypingFunction
+export type TypingFunctionGenerator<TArgs extends Array<any>, TParsedType> = (
+  ...args: TArgs
+) => TypingFunction<TParsedType>
 
 export const types: {
-  [name: string]: TypingFunction | TypingFunctionGenerator
+  int: TypingFunction<number>
+  uint: TypingFunction<number>
+  string: TypingFunction<string>
+  address: TypingFunction<string>
+  bytes32: TypingFunction<string>
+  JsonRpcProvider: TypingFunction<ethers.providers.JsonRpcProvider>
+  Contract: TypingFunctionGenerator<[ethers.utils.Interface], ethers.Contract>
+  Wallet: TypingFunction<ethers.Wallet>
 } = {
-  number: {
+  int: {
     parse: (val) => {
       return parseInt(val, 10)
     },
     validate: (val) => {
-      return Number.isInteger(val) && val >= 0
+      return Number.isInteger(val)
+    },
+  },
+  uint: {
+    parse: (val) => {
+      return types.int.parse(val)
+    },
+    validate: (val) => {
+      return types.int.validate(val) && val >= 0
     },
   },
   string: {
@@ -28,17 +45,17 @@ export const types: {
   },
   address: {
     parse: (val) => {
-      return val
+      return types.string.parse(val)
     },
-    validate: (val: any) => {
+    validate: (val) => {
       return ethers.utils.isAddress(val)
     },
   },
   bytes32: {
     parse: (val) => {
-      return val
+      return types.string.parse(val)
     },
-    validate: (val: any) => {
+    validate: (val) => {
       return ethers.utils.isHexString(val, 32)
     },
   },
@@ -46,17 +63,17 @@ export const types: {
     parse: (val) => {
       return new ethers.providers.JsonRpcProvider(val)
     },
-    validate: (val: any) => {
-      return true
+    validate: (val) => {
+      return true // TODO
     },
   },
-  Contract: (iface: ethers.utils.Interface) => {
+  Contract: (iface) => {
     return {
       parse: (val) => {
         return new ethers.Contract(val, iface)
       },
-      validate: (val: any) => {
-        return true
+      validate: (val) => {
+        return true // TODO
       },
     }
   },
@@ -64,8 +81,8 @@ export const types: {
     parse: (val) => {
       return new ethers.Wallet(val)
     },
-    validate: (val: any) => {
-      return ethers.utils.isHexString(val, 32)
+    validate: (val) => {
+      return true // TODO
     },
   },
 }
