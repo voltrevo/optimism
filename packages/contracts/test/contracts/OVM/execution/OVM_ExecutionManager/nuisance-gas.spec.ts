@@ -7,6 +7,8 @@ import {
   NON_NULL_BYTES32,
   VERIFIED_EMPTY_CONTRACT_HASH,
   NUISANCE_GAS_COSTS,
+  DUMMY_BYTECODE,
+  DUMMY_BYTECODE_BYTELEN,
   Helper_TestRunner_BYTELEN,
 } from '../../../../helpers'
 
@@ -201,6 +203,34 @@ const test_nuisanceGas: TestDefinition = {
                 ],
               },
               expectedReturnStatus: true,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'ovmCREATE consumes the correct amount of nuisance gas',
+      focus: true,
+      postState: {
+        ExecutionManager: {
+          messageRecord: {
+            nuisanceGasLeft:
+              OVM_TX_GAS_LIMIT -
+              (DUMMY_BYTECODE_BYTELEN * NUISANCE_GAS_COSTS.NUISANCE_GAS_PER_CONTRACT_BYTE + NUISANCE_GAS_COSTS.MIN_NUISANCE_GAS_PER_CONTRACT)
+          },
+        },
+      },
+      parameters: [
+        {
+          name: 'Nuisance gas is reduced by MIN_NUISANCE_GAS_PER_CONTRACT + NUISANCE_GAS_PER_CONTRACT_BYTE*CONTRACT_SIZE',
+          steps: [
+            {
+              functionName: 'ovmCREATE',
+              functionParams: {
+                bytecode: DUMMY_BYTECODE
+              },
+              expectedReturnStatus: true,
+              expectedReturnValue: CREATED_CONTRACT_1,
             },
           ],
         },
