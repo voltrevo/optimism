@@ -1,5 +1,6 @@
 /* Internal Imports */
 import { constants } from 'ethers'
+import { remove0x } from '@eth-optimism/core-utils'
 import {
   ExecutionManagerTestRunner,
   TestDefinition,
@@ -12,12 +13,29 @@ import {
   Helper_TestRunner_BYTELEN,
 } from '../../../../helpers'
 
+import { deployedBytecode as WHITELIST_BYTECODE} from
+  '../../../../../artifacts-ovm/contracts/optimistic-ethereum/OVM/predeploys/OVM_DeployerWhitelist.sol/OVM_DeployerWhitelist.json'
+
 const CREATED_CONTRACT_1 = '0x2bda4a99d5be88609d23b1e4ab5d1d34fb1c2feb'
 
 const FRESH_CALL_NUISANCE_GAS_COST =
   Helper_TestRunner_BYTELEN *
     NUISANCE_GAS_COSTS.NUISANCE_GAS_PER_CONTRACT_BYTE +
   NUISANCE_GAS_COSTS.MIN_NUISANCE_GAS_PER_CONTRACT
+
+
+const WHITELIST_BYTECODE_BYTELEN = remove0x(WHITELIST_BYTECODE).length / 2
+
+const NUISANCE_GAS_TO_DEPLOY_DUMMY_CONTRACT =
+  // Load Deployer Whitelist
+  + WHITELIST_BYTECODE_BYTELEN * NUISANCE_GAS_COSTS.NUISANCE_GAS_PER_CONTRACT_BYTE
+  + NUISANCE_GAS_COSTS.MIN_NUISANCE_GAS_PER_CONTRACT
+  // Load storage slot in Deployer Whitelist
+  + NUISANCE_GAS_COSTS.NUISANCE_GAS_SLOAD
+  // Load Dummy Bytecode
+  + DUMMY_BYTECODE_BYTELEN * NUISANCE_GAS_COSTS.NUISANCE_GAS_PER_CONTRACT_BYTE
+  + NUISANCE_GAS_COSTS.MIN_NUISANCE_GAS_PER_CONTRACT
+
 
 const test_nuisanceGas: TestDefinition = {
   name: 'Basic tests for nuisance gas',
@@ -210,13 +228,11 @@ const test_nuisanceGas: TestDefinition = {
     },
     {
       name: 'ovmCREATE consumes the correct amount of nuisance gas',
-      focus: true,
       postState: {
         ExecutionManager: {
           messageRecord: {
             nuisanceGasLeft:
-              OVM_TX_GAS_LIMIT -
-              (DUMMY_BYTECODE_BYTELEN * NUISANCE_GAS_COSTS.NUISANCE_GAS_PER_CONTRACT_BYTE + NUISANCE_GAS_COSTS.MIN_NUISANCE_GAS_PER_CONTRACT)
+              OVM_TX_GAS_LIMIT - NUISANCE_GAS_TO_DEPLOY_DUMMY_CONTRACT
           },
         },
       },
