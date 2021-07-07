@@ -22,6 +22,8 @@ import { OVM_DeployerWhitelist } from "../predeploys/OVM_DeployerWhitelist.sol";
 /* External Imports */
 import { Math } from "@openzeppelin/contracts/math/Math.sol";
 
+import "hardhat/console.sol";
+
 /**
  * @title OVM_ExecutionManager
  * @dev The Execution Manager (EM) is the core of our OVM implementation, and provides a sandboxed
@@ -432,19 +434,25 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
             bytes memory
         )
     {
+        // console.log('->ovmCREATE');
+        console.log('-> messageRecord.nuisanceGasLeft before', messageRecord.nuisanceGasLeft);
         // Creator is always the current ADDRESS.
         address creator = ovmADDRESS();
 
+        // console.log('-> ovmCREATE 1');
         // Check that the deployer is whitelisted, or
         // that arbitrary contract deployment has been enabled.
         _checkDeployerAllowed(creator);
+        // console.log('-> ovmCREATE 2');
 
         // Generate the correct CREATE address.
         address contractAddress = Lib_EthUtils.getAddressForCREATE(
             creator,
             _getAccountNonce(creator)
         );
+        // console.log('-> ovmCREATE 3');
 
+        console.log('-> messageRecord.nuisanceGasLeft after', messageRecord.nuisanceGasLeft);
         return _createContract(
             contractAddress,
             _bytecode,
@@ -1147,6 +1155,7 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
         uint256 prevNuisanceGasLeft = messageRecord.nuisanceGasLeft;
         uint256 nuisanceGasLimit = _getNuisanceGasLimit(_gasLimit);
         messageRecord.nuisanceGasLeft = nuisanceGasLimit;
+        console.log('reset to ', nuisanceGasLimit);
 
         // Make the call and make sure to pass in the gas limit. Another instance of hidden
         // complexity. `_contract` is guaranteed to be a safe contract, meaning its return/revert
@@ -1575,6 +1584,7 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
         // If we hadn't already loaded the account, then we'll need to charge "nuisance gas" based
         // on the size of the contract code.
         if (_wasAccountAlreadyLoaded == false) {
+            console.log('_useNuisanceGas in _checkAccountLoad for:', _address);
             _useNuisanceGas(
                 (Lib_EthUtils.getCodeSize(_getAccountEthAddress(_address)) * NUISANCE_GAS_PER_CONTRACT_BYTE) + MIN_NUISANCE_GAS_PER_CONTRACT
             );
@@ -1646,6 +1656,7 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
         // If we hadn't already loaded the account, then we'll need to charge some fixed amount of
         // "nuisance gas".
         if (_wasContractStorageAlreadyLoaded == false) {
+            console.log("_useNuisanceGas(NUISANCE_GAS_SLOAD);");
             _useNuisanceGas(NUISANCE_GAS_SLOAD);
         }
     }
@@ -1681,6 +1692,7 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
 
             ovmStateManager.incrementTotalUncommittedContractStorage();
             _useNuisanceGas(NUISANCE_GAS_SSTORE);
+            console.log('_useNuisanceGas(NUISANCE_GAS_SSTORE);');
         }
     }
 
@@ -1838,8 +1850,9 @@ contract OVM_ExecutionManager is iOVM_ExecutionManager, Lib_AddressResolver {
         if (messageRecord.nuisanceGasLeft < _amount) {
             _revertWithFlag(RevertFlag.EXCEEDS_NUISANCE_GAS);
         }
-
+        console.log('_useNuisanceGas amount', _amount);
         messageRecord.nuisanceGasLeft -= _amount;
+        console.log('messageRecord.nuisanceGasLeft', messageRecord.nuisanceGasLeft);
     }
 
 
